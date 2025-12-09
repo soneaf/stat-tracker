@@ -712,6 +712,49 @@ export default function App() {
         setTheme(generatedTheme);
     }, [teamColors]);
 
+    // --- Auto-Save Logic ---
+    useEffect(() => {
+        const activeGame = {
+            gameState,
+            gameDetails,
+            timerSettings,
+            gameTime,
+            historyStack,
+            isTimerRunning,
+            shotChartingEnabled,
+            pendingReset: false
+        };
+        // Only save if game is "active" (score > 0 OR time changed from default OR opponent set)
+        const isGameActive = gameState.homeScore > 0 || gameState.awayScore > 0 || gameTime !== timerSettings.periodLength * 60 || gameDetails.awayTeam;
+
+        if (isGameActive && !showResetConfirm && !showSubmitModal) {
+            localStorage.setItem('stat-tracker-active-game', JSON.stringify(activeGame));
+        }
+    }, [gameState, gameDetails, timerSettings, gameTime, historyStack, isTimerRunning, shotChartingEnabled]);
+
+    useEffect(() => {
+        const savedGame = localStorage.getItem('stat-tracker-active-game');
+        if (savedGame) {
+            try {
+                const parsed = JSON.parse(savedGame);
+                // Basic validation
+                if (parsed.gameState && parsed.gameDetails) {
+                    console.log("Resuming Active Game session...");
+                    setGameState(parsed.gameState);
+                    setGameDetails(parsed.gameDetails);
+                    if (parsed.timerSettings) setTimerSettings(parsed.timerSettings);
+                    if (parsed.gameTime !== undefined) setGameTime(parsed.gameTime);
+                    if (parsed.historyStack) setHistoryStack(parsed.historyStack);
+                    if (parsed.shotChartingEnabled !== undefined) setShotChartingEnabled(parsed.shotChartingEnabled);
+                    // Don't auto-resume timer running state to avoid confusion, keep it paused
+                    setIsTimerRunning(false);
+                }
+            } catch (e) {
+                console.error("Failed to restore active game", e);
+            }
+        }
+    }, []);
+
     // --- Logic ---
 
     const saveStateToHistory = () => {
@@ -1019,6 +1062,9 @@ export default function App() {
         } else if (finalResult.outcome === 'Loss') {
             triggerLossEffect();
         }
+
+        // Clear Active Game Storage
+        localStorage.removeItem('stat-tracker-active-game');
 
         setGameState(INITIAL_GAME_STATE);
         setHistoryStack([]);
@@ -2179,6 +2225,9 @@ export default function App() {
                                     </button>
                                     <button
                                         onClick={() => {
+                                            // Cleanup Active Game Storage
+                                            localStorage.removeItem('stat-tracker-active-game');
+
                                             setGameState(INITIAL_GAME_STATE);
                                             setHistoryStack([]);
 
