@@ -22,7 +22,7 @@ import {
     Activity, History, Clipboard, Trash2, Settings, X, Save, RotateCcw,
     Trophy, Calendar, ChevronRight, ChevronLeft, CheckCircle2,
     Clock, PlayCircle, PauseCircle, StopCircle, Undo2,
-    Upload, AlertTriangle, Layout, Palette, Share2, Download, User, Eye, Sparkles, Copy, FileText
+    Upload, AlertTriangle, Layout, Palette, Share2, Download, User, Eye, Sparkles, Copy, FileText, HelpCircle
 } from 'lucide-react';
 
 import html2canvas from 'html2canvas';
@@ -544,6 +544,9 @@ export default function App() {
     const [showCourtModal, setShowCourtModal] = useState(false);
     const [pendingShot, setPendingShot] = useState(null);
 
+    // Persistence State
+    const [isRestored, setIsRestored] = useState(false);
+
     // AI Settings
     const [openAIKey, setOpenAIKey] = useState(localStorage.getItem('stat-tracker-openai-key') || '');
 
@@ -725,12 +728,13 @@ export default function App() {
             pendingReset: false
         };
         // Only save if game is "active" (score > 0 OR time changed from default OR opponent set)
+        // AND validation check passed (isRestored is true)
         const isGameActive = gameState.homeScore > 0 || gameState.awayScore > 0 || gameTime !== timerSettings.periodLength * 60 || gameDetails.awayTeam;
 
-        if (isGameActive && !showResetConfirm && !showSubmitModal) {
+        if (isRestored && isGameActive && !showResetConfirm && !showSubmitModal) {
             localStorage.setItem('stat-tracker-active-game', JSON.stringify(activeGame));
         }
-    }, [gameState, gameDetails, timerSettings, gameTime, historyStack, isTimerRunning, shotChartingEnabled]);
+    }, [gameState, gameDetails, timerSettings, gameTime, historyStack, isTimerRunning, shotChartingEnabled, isRestored]);
 
     useEffect(() => {
         const savedGame = localStorage.getItem('stat-tracker-active-game');
@@ -753,6 +757,8 @@ export default function App() {
                 console.error("Failed to restore active game", e);
             }
         }
+        // Mark as restored so saves can happen
+        setIsRestored(true);
     }, []);
 
     // --- Logic ---
@@ -1150,8 +1156,7 @@ export default function App() {
         // And a customized bio paragraph. "Enzo contributed...".
         // Since this is a static share string, I can't generate the dynamic bio text without AI.
         // But the user said "share stats info... here is what it should look like".
-        // The requested block has "ENZO PERFORMANCE BREAKDOWN" and "Enzo contributed...".
-        // I can generate the "PERFORMANCE BREAKDOWN" and "STATISTICAL SUMMARY" sections dynamically.
+        // The requested block has "ENZO PERFORMANCE BREAKDOWN" and "STATISTICAL SUMMARY" sections dynamically.
         // For the "Enzo contributed..." paragraph, I will template a simple one:
         // "[Player] contributed [Points] points in a [Outcome] vs [Opponent]."
 
@@ -1874,11 +1879,75 @@ export default function App() {
                                                 </div>
                                             </div>
                                         )}
+                                        {/* --- HELP TAB --- */}
+                                        {activeSettingsTab === 'help' && (
+                                            <div className="space-y-4 animate-in fade-in duration-200">
+                                                <div className="p-5 rounded-lg border bg-black/20 space-y-4" style={{ borderColor: theme.border }}>
+                                                    <div className="flex items-center space-x-3 mb-2">
+                                                        <div className="p-2 rounded-full bg-white/10">
+                                                            <HelpCircle className="w-6 h-6" style={{ color: theme.accent }} />
+                                                        </div>
+                                                        <h3 className="font-bold text-lg">How to Use</h3>
+                                                    </div>
+
+                                                    <div className="space-y-3 text-sm opacity-80">
+                                                        <details className="group cursor-pointer">
+                                                            <summary className="font-bold hover:text-white transition-colors list-none flex items-center justify-between">
+                                                                <span>1. Tracking a Game</span>
+                                                                <ChevronRight className="w-4 h-4 transition-transform group-open:rotate-90" />
+                                                            </summary>
+                                                            <div className="pt-2 pl-2 space-y-1 text-xs leading-relaxed">
+                                                                <p>• Use the <strong>+1, +2, +3</strong> buttons to add score.</p>
+                                                                <p>• Use <strong>Stats</strong> (REB, AST, STL) to track performance.</p>
+                                                                <p>• Enable <strong>Shot Chart</strong> in 'Tracker' settings to tap shot locations.</p>
+                                                            </div>
+                                                        </details>
+
+                                                        <details className="group cursor-pointer border-t border-white/5 pt-2">
+                                                            <summary className="font-bold hover:text-white transition-colors list-none flex items-center justify-between">
+                                                                <span>2. Save & Share</span>
+                                                                <ChevronRight className="w-4 h-4 transition-transform group-open:rotate-90" />
+                                                            </summary>
+                                                            <div className="pt-2 pl-2 space-y-1 text-xs leading-relaxed">
+                                                                <p>• Click <strong>Save Game</strong> when finished.</p>
+                                                                <p>• Go to <strong>History</strong> (Clock Icon) to view past games.</p>
+                                                                <p>• Click the <strong>Share Icon</strong> to get a detailed ESPN-style recap.</p>
+                                                                <p>• Use the <strong>AI Icon</strong> (Sparkles) to generate a written story (requires API Key).</p>
+                                                            </div>
+                                                        </details>
+
+                                                        <details className="group cursor-pointer border-t border-white/5 pt-2">
+                                                            <summary className="font-bold hover:text-white transition-colors list-none flex items-center justify-between">
+                                                                <span>3. Auto-Save Logic</span>
+                                                                <ChevronRight className="w-4 h-4 transition-transform group-open:rotate-90" />
+                                                            </summary>
+                                                            <div className="pt-2 pl-2 space-y-1 text-xs leading-relaxed">
+                                                                <p>• Your game is automatically saved to your device.</p>
+                                                                <p>• If you refresh or close the app, it will resume exactly where you left off.</p>
+                                                                <p>• Data is cleared only when you <strong>Save</strong> or <strong>Reset</strong>.</p>
+                                                            </div>
+                                                        </details>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
-                                    <button onClick={() => setShowSettings(false)} className="w-full py-3 rounded-lg font-bold shadow-lg" style={{ backgroundColor: theme.accent, color: '#1a0b2e' }}>
-                                        Save Settings
-                                    </button>
+                                    <div className="space-y-3 pt-2">
+                                        <button onClick={() => setShowSettings(false)} className="w-full py-3 rounded-lg font-bold shadow-lg" style={{ backgroundColor: theme.accent, color: '#1a0b2e' }}>
+                                            Save Settings
+                                        </button>
+                                        <div className="flex justify-between items-center px-1">
+                                            <span className="text-[10px] font-mono opacity-30 select-none">v1.0.0-beta.1</span>
+                                            <button
+                                                onClick={() => setActiveSettingsTab('help')}
+                                                className={`p-1 rounded-full transition-colors ${activeSettingsTab === 'help' ? 'bg-white/20' : 'opacity-50 hover:opacity-100 hover:bg-white/10'}`}
+                                                title="Help & Instructions"
+                                            >
+                                                <HelpCircle className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
