@@ -22,7 +22,7 @@ import {
     Activity, History, Clipboard, Trash2, Settings, X, Save, RotateCcw,
     Trophy, Calendar, ChevronRight, ChevronLeft, CheckCircle2,
     Clock, PlayCircle, PauseCircle, StopCircle, Undo2,
-    Upload, AlertTriangle, Layout, Palette, Share2, Download, User
+    Upload, AlertTriangle, Layout, Palette, Share2, Download, User, Eye
 } from 'lucide-react';
 
 import html2canvas from 'html2canvas';
@@ -196,32 +196,150 @@ const Court = ({ onShot, shots = [], theme, interactive = false }) => {
         if (!interactive) return;
         const rect = e.target.getBoundingClientRect();
         const x = ((e.clientX - rect.left) / rect.width) * 100;
-        const y = ((e.clientY - rect.top) / rect.top) * 100; // Changed rect.height to rect.top to match original behavior
+        const y = ((e.clientY - rect.top) / rect.height) * 100; // Use rect.height for y-coordinate
         onShot({ x, y });
     };
 
     return (
-        <div className="relative w-full aspect-[50/47] bg-[#d2a679] border-2 border-black rounded overflow-hidden" onClick={handleClick}>
-            {/* Court Lines (SVG) - Simplified Half Court */}
-            <svg viewBox="0 0 100 94" className="w-full h-full absolute inset-0 pointer-events-none">
-                {/* Lane */}
-                <rect x="30" y="0" width="40" height="38" fill="transparent" stroke="white" strokeWidth="0.5" />
-                <circle cx="50" cy="38" r="12" fill="transparent" stroke="white" strokeWidth="0.5" />
-                {/* 3PT Line */}
-                <path d="M 10 0 L 10 28 Q 50 60 90 28 L 90 0" fill="transparent" stroke="white" strokeWidth="0.5" />
-                {/* Hoop */}
-                <circle cx="50" cy="10" r="1.5" fill="none" stroke="orange" strokeWidth="0.5" />
-                <line x1="47" y1="8" x2="53" y2="8" stroke="white" strokeWidth="0.5" />
-            </svg>
+        <div className="relative w-full pb-[90%] bg-black/40 rounded-lg border border-white/10 overflow-hidden" onClick={handleClick} style={interactive ? { cursor: 'crosshair' } : {}}>
+            {/* Court Markings (simplified) */}
+            {/* Court Markings - Interactive fix: pointer-events-none ensures clicks/taps go to the parent div */}
+            <div className="absolute inset-0 pointer-events-none">
+                {/* Paint */}
+                <div className="absolute top-0 left-[35%] w-[30%] h-[40%] border-2 border-white/20 bg-white/5 mx-auto"></div>
+                {/* 3PT Line (simplified arc) */}
+                <div className="absolute top-0 left-[10%] w-[80%] h-[60%] border-2 border-white/20 rounded-b-full border-t-0"></div>
+                {/* Basket - Re-added Hoop */}
+                <div className="absolute top-[5%] left-[45%] w-[10%] h-[1%] bg-orange-500 rounded-full shadow-[0_0_10px_rgba(255,165,0,0.5)]"></div>
+                <div className="absolute top-[6%] left-[49.5%] w-[1%] h-[2px] bg-white/50"></div>
+            </div>
 
             {/* Shots */}
             {shots.map((shot, i) => (
                 <div
                     key={i}
-                    className={`absolute w-3 h-3 -ml-1.5 -mt-1.5 rounded-full border border-black/50 ${shot.isMake ? 'bg-green-500' : 'bg-red-500'}`}
+                    className={`absolute w-3 h-3 -ml-1.5 -mt-1.5 rounded-full border border-black/50 shadow-sm transform hover:scale-150 transition-transform ${shot.isMake ? 'bg-green-400' : 'bg-red-400'}`}
                     style={{ left: `${shot.x}%`, top: `${shot.y}%` }}
+                    title={`${shot.type} ${shot.isMake ? 'Make' : 'Miss'} - Q${shot.period}`}
                 />
             ))}
+        </div>
+    );
+};
+
+const GameDetailsModal = ({ game, onClose, theme }) => {
+    if (!game) return null;
+
+    // Helper for safe stat access
+    const getStat = (key) => game.stats?.[key] ?? 0;
+
+    // Calculate percentages
+    const calcPct = (m, a) => a > 0 ? Math.round((m / a) * 100) : 0;
+    const fgPct = calcPct(getStat('fgm'), getStat('fga'));
+    const fg3Pct = calcPct(getStat('fg3m'), getStat('fg3a'));
+    const ftPct = calcPct(getStat('ftm'), getStat('fta'));
+
+    return (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]" style={{ backgroundColor: theme.bg, border: `1px solid ${theme.border}` }}>
+                {/* Header */}
+                <div className="p-4 border-b flex justify-between items-start bg-black/20 relative" style={{ borderColor: theme.border }}>
+                    <div>
+                        <div className="text-xs font-bold opacity-60 uppercase mb-1">{new Date(game.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                        <h2 className="text-xl font-black uppercase tracking-tight leading-tight">
+                            {game.homeTeam || "My Team"}
+                            <span className="opacity-50 mx-2">vs</span>
+                            {game.awayTeam}
+                        </h2>
+                        <div className="mt-2 flex items-center gap-2">
+                            <span className="text-3xl font-black">{game.finalScore}</span>
+                            <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${game.outcome === 'Win' ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-red-500/20 text-red-400 border border-red-500/30'}`}>
+                                {game.outcome}
+                            </span>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-1 hover:bg-white/10 rounded-full transition-colors absolute top-4 right-4">
+                        <X className="w-6 h-6" />
+                    </button>
+                </div>
+
+                {/* Scrollable Content */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                    {/* Period Breakdown */}
+                    <div>
+                        <h3 className="text-xs font-bold uppercase opacity-60 mb-2">Period Breakdown (Points)</h3>
+                        <div className="grid grid-cols-4 gap-2">
+                            {[1, 2, 3, 4].map(p => (
+                                <div key={p} className="bg-black/20 rounded p-2 text-center border border-white/5">
+                                    <div className="text-[10px] opacity-50 uppercase mb-1">Q{p}</div>
+                                    <div className="font-bold text-lg" style={{ color: theme.accent }}>
+                                        {game.stats?.periodScores?.[p] ?? 0}
+                                        <span className="text-[10px] font-normal opacity-50 ml-1">PTS</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Stats List */}
+                    <div>
+                        <h3 className="text-xs font-bold uppercase opacity-60 mb-3">Full Box Score</h3>
+                        <div className="space-y-3">
+                            {/* Shooting */}
+                            <div className="grid grid-cols-3 gap-2">
+                                <div className="bg-black/20 rounded p-2 text-center border border-white/5">
+                                    <div className="text-[10px] opacity-50 uppercase">FG%</div>
+                                    <div className="font-bold">{fgPct}%</div>
+                                    <div className="text-[10px] opacity-40">{getStat('fgm')}/{getStat('fga')}</div>
+                                </div>
+                                <div className="bg-black/20 rounded p-2 text-center border border-white/5">
+                                    <div className="text-[10px] opacity-50 uppercase">3PT%</div>
+                                    <div className="font-bold">{fg3Pct}%</div>
+                                    <div className="text-[10px] opacity-40">{getStat('fg3m')}/{getStat('fg3a')}</div>
+                                </div>
+                                <div className="bg-black/20 rounded p-2 text-center border border-white/5">
+                                    <div className="text-[10px] opacity-50 uppercase">FT%</div>
+                                    <div className="font-bold">{ftPct}%</div>
+                                    <div className="text-[10px] opacity-40">{getStat('ftm')}/{getStat('fta')}</div>
+                                </div>
+                            </div>
+
+                            {/* Rebounds Split */}
+                            <div className="grid grid-cols-3 gap-2">
+                                <div className="bg-black/20 rounded-lg p-3 flex justify-between items-center border border-white/5">
+                                    <span className="text-xs font-bold opacity-70">Total Reb</span>
+                                    <span className="font-bold text-lg">{getStat('rebounds')}</span>
+                                </div>
+                                <div className="bg-black/20 rounded-lg p-3 flex justify-between items-center border border-white/5">
+                                    <span className="text-xs font-bold opacity-70">Off Reb</span>
+                                    <span className="font-bold text-lg">{getStat('oreb')}</span>
+                                </div>
+                                <div className="bg-black/20 rounded-lg p-3 flex justify-between items-center border border-white/5">
+                                    <span className="text-xs font-bold opacity-70">Def Reb</span>
+                                    <span className="font-bold text-lg">{getStat('dreb')}</span>
+                                </div>
+                            </div>
+
+                            {/* Main Stats */}
+                            <div className="grid grid-cols-2 gap-2">
+                                {[
+                                    { label: 'Points', val: getStat('points') },
+                                    { label: 'Assists', val: getStat('assists') },
+                                    { label: 'Steals', val: getStat('steals') },
+                                    { label: 'Blocks', val: getStat('blocks') },
+                                    { label: 'Turnovers', val: getStat('turnovers') },
+                                    { label: 'Fouls', val: getStat('fouls') }
+                                ].map((s, i) => (
+                                    <div key={i} className="bg-black/20 rounded-lg p-3 flex justify-between items-center border border-white/5">
+                                        <span className="text-xs font-bold opacity-70 uppercase">{s.label}</span>
+                                        <span className="font-bold text-lg" style={{ color: theme.text }}>{s.val}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 };
@@ -270,6 +388,7 @@ export default function App() {
     // Game State
     const [gameState, setGameState] = useState(INITIAL_GAME_STATE);
     const [historyStack, setHistoryStack] = useState([]);
+    const [selectedGame, setSelectedGame] = useState(null); // For Details Modal
 
     // Timer State
     const [gameTime, setGameTime] = useState(720); // 12 minutes in seconds
@@ -572,8 +691,8 @@ export default function App() {
         if (isSaving) return;
         setIsSaving(true);
 
-        const home = finalResult.homeScore || 0;
-        const away = finalResult.awayScore || 0;
+        const home = parseInt(finalResult.homeScore) || 0;
+        const away = parseInt(finalResult.awayScore) || 0;
         const finalScoreString = `${home} - ${away}`;
 
         // Generate consistent ID (Client-Side)
@@ -619,7 +738,7 @@ export default function App() {
 
             // 3. Trigger Post-Save UI immediately
             // alert("✅ Game Saved!");
-            handlePostSave();
+            handlePostSave(gameData, finalScoreString); // Pass gameData and finalScoreString
 
             // 4. Google Sheets Export (Fire & Forget)
             if (googleSheetUrl) {
@@ -692,7 +811,7 @@ export default function App() {
 
 
 
-    const handlePostSave = () => {
+    const handlePostSave = (gameData, finalScoreString) => { // Accept gameData and finalScoreString
         setShowSubmitModal(false);
         if (finalResult.outcome === 'Win') {
             confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: [theme.accent, theme.bg, '#ffffff'] });
@@ -1073,8 +1192,8 @@ export default function App() {
                             </h3>
                             {/* Other Stats - Grid */}
                             <div className="grid grid-cols-4 gap-2">
-                                <ActionButton label="OR" onClick={() => handleStatClick('oreb')} theme={theme} />
-                                <ActionButton label="DR" onClick={() => handleStatClick('dreb')} theme={theme} />
+                                <ActionButton label="OR" onClick={() => handleStatClick('oreb')} theme={theme} type="positive" />
+                                <ActionButton label="DR" onClick={() => handleStatClick('dreb')} theme={theme} type="positive" />
                                 <ActionButton label="ASST" onClick={() => handleStatClick('assists')} theme={theme} type="positive" />
                                 <ActionButton label="STL" onClick={() => handleStatClick('steals')} theme={theme} type="positive" />
 
@@ -1121,6 +1240,13 @@ export default function App() {
 
                 </section >
             </main >
+
+            {/* --- GAME DETAILS MODAL --- */}
+            <GameDetailsModal
+                game={selectedGame}
+                onClose={() => setSelectedGame(null)}
+                theme={theme}
+            />
 
             {/* --- SETTINGS MODAL --- */}
             {
@@ -1548,7 +1674,7 @@ export default function App() {
                                             <span>Saving...</span>
                                         </>
                                     ) : (
-                                        <span>Save & Share</span>
+                                        <span>Save Game</span>
                                     )}
                                 </button>
                             </div>
@@ -1602,6 +1728,13 @@ export default function App() {
                                                             <div className="text-sm opacity-80 mt-1 font-mono">Final Score: {safeScore}</div>
                                                         </div>
                                                         <div className="flex space-x-2">
+                                                            <button
+                                                                onClick={() => setSelectedGame(game)}
+                                                                className="p-2 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors"
+                                                                title="View Details"
+                                                            >
+                                                                <Eye className="w-4 h-4" />
+                                                            </button>
                                                             <button onClick={() => handleShare(game)} className="flex items-center space-x-1 px-3 py-1.5 rounded text-xs font-bold bg-white/5 hover:bg-white/10 border transition-colors" style={{ borderColor: theme.border }}>
                                                                 <Share2 className="w-3 h-3" /> <span>SHARE</span>
                                                             </button>
@@ -1667,7 +1800,7 @@ export default function App() {
                                 <Court
                                     interactive={true}
                                     theme={theme}
-                                    onShot={(loc) => handleScore(pendingShot.points, pendingShot.isMake, pendingShot.type, loc)}
+                                    onShot={(loc) => handleStatClick(pendingShot.type === '3pt' ? 'fg3m' : 'fgm', pendingShot.points, pendingShot.isMake, pendingShot.points, loc)}
                                 />
                             </div>
                         </div>
@@ -1689,7 +1822,7 @@ export default function App() {
 
                                 <div className="w-full flex flex-col gap-3 pt-2">
                                     <button
-                                        onClick={() => { incrementStat('fouls'); setShowTechModal(false); }}
+                                        onClick={() => { handleStatClick('fouls'); setShowTechModal(false); }}
                                         className="w-full py-3 rounded-lg font-bold border hover:bg-white/5 transition-colors flex items-center justify-center space-x-2"
                                         style={{ borderColor: theme.border }}
                                     >
@@ -1698,13 +1831,13 @@ export default function App() {
 
                                     <div className="grid grid-cols-2 gap-3">
                                         <button
-                                            onClick={() => { handleScore(1, true, 'tech_ft'); setShowTechModal(false); }}
+                                            onClick={() => { handleStatClick('ftm', 1, true, 1); setShowTechModal(false); }}
                                             className="py-3 rounded-lg font-bold bg-green-600 hover:bg-green-700 text-white shadow-lg transition-transform active:scale-95"
                                         >
                                             Tech FT Made
                                         </button>
                                         <button
-                                            onClick={() => { handleScore(0, false, 'tech_ft'); setShowTechModal(false); }}
+                                            onClick={() => { handleStatClick('fta', 0, false, 1); setShowTechModal(false); }}
                                             className="py-3 rounded-lg font-bold bg-red-600 hover:bg-red-700 text-white shadow-lg transition-transform active:scale-95"
                                         >
                                             Tech FT Miss
