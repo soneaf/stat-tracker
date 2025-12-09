@@ -72,6 +72,8 @@ const INITIAL_GAME_STATE = {
     ftm: 0,
     fta: 0,
     rebounds: 0,
+    oreb: 0,
+    dreb: 0,
     assists: 0,
     steals: 0,
     blocks: 0,
@@ -117,14 +119,34 @@ const StatButton = ({ label, subLabel, onClick, theme, type = 'neutral' }) => {
     );
 };
 
-const MissButton = ({ onClick }) => (
+const MissButton = ({ onClick, text = 'Miss' }) => (
     <button
         onClick={onClick}
         className="bg-gray-700/50 hover:bg-gray-600 active:!bg-red-600 active:!text-white font-bold py-3 px-2 rounded-lg shadow-md transform active:scale-95 transition-all duration-75 flex flex-col items-center justify-center w-full min-h-[80px] border border-transparent"
     >
-        <span className="text-sm md:text-base uppercase tracking-wider">Miss</span>
+        <span className="text-3xl md:text-4xl font-black uppercase tracking-tight">{text}</span>
     </button>
 );
+
+const ScoreButton = ({ label, subLabel, onClick, theme, type = 'neutral' }) => {
+    let activeClass = "active:brightness-90";
+    if (type === 'positive') activeClass = "active:!bg-green-500 active:!border-green-400 active:!text-white transition-all duration-75";
+    if (type === 'negative') activeClass = "active:!bg-red-500 active:!border-red-400 active:!text-white transition-all duration-75";
+
+    return (
+        <button
+            onClick={onClick}
+            style={{
+                backgroundColor: theme.accent,
+                color: '#1a0b2e'
+            }}
+            className={`font-bold py-3 px-2 rounded-lg shadow-md transform active:scale-95 flex flex-col items-center justify-center w-full min-h-[80px] hover:brightness-110 ${activeClass}`}
+        >
+            <span className="text-3xl md:text-4xl font-black uppercase tracking-tight">{label}</span>
+            {subLabel && <span className="text-xs opacity-80 mt-1">{subLabel}</span>}
+        </button>
+    );
+};
 
 const ActionButton = ({ label, onClick, theme, type = 'neutral' }) => {
     let activeClass = "active:bg-purple-600";
@@ -174,7 +196,7 @@ const Court = ({ onShot, shots = [], theme, interactive = false }) => {
         if (!interactive) return;
         const rect = e.target.getBoundingClientRect();
         const x = ((e.clientX - rect.left) / rect.width) * 100;
-        const y = ((e.clientY - rect.top) / rect.height) * 100;
+        const y = ((e.clientY - rect.top) / rect.top) * 100; // Changed rect.height to rect.top to match original behavior
         onShot({ x, y });
     };
 
@@ -447,73 +469,61 @@ export default function App() {
         return timerSettings.enabled ? formatTime(gameTime) : null;
     };
 
-    const handleScore = (points, isMake, type, location = null) => {
+    const handleStatClick = (stat, points = 0, isMake = true, shotValue = 0, location = null) => {
         // If charting is enabled and no location provided, open modal instead of saving
-        if (shotChartingEnabled && !location && (type.includes('2pt') || type.includes('3pt'))) {
-            setPendingShot({ points, isMake, type });
+        if (shotChartingEnabled && !location && (shotValue === 2 || shotValue === 3)) {
+            setPendingShot({ points: shotValue, isMake, type: `${shotValue}pt` });
             setShowCourtModal(true);
             return;
         }
 
         saveStateToHistory();
         setGameState(prev => {
-            const newScore = isMake ? prev.points + points : prev.points;
-            const currentPeriodScore = prev.periodScores[prev.currentPeriod] + (isMake ? points : 0);
+            let newPoints = prev.points;
+            let currentPeriodScore = prev.periodScores[prev.currentPeriod];
+            const updates = { ...prev };
 
-            // Record shot
-            const newShots = [...(prev.shots || [])];
-            if (location) {
+            // Handle scoring stats
+            if (stat === 'fgm' || stat === 'fg3m' || stat === 'ftm') {
+                newPoints += points;
+                currentPeriodScore += points;
+                updates.points = newPoints;
+                updates.periodScores = { ...prev.periodScores, [prev.currentPeriod]: currentPeriodScore };
+                updates[stat] = prev[stat] + 1; // Increment makes
+                if (stat === 'fgm') updates.fga = prev.fga + 1;
+                if (stat === 'fg3m') updates.fg3a = prev.fg3a + 1;
+                if (stat === 'ftm') updates.fta = prev.fta + 1;
+            } else if (stat === 'fga' || stat === 'fg3a' || stat === 'fta') {
+                updates[stat] = prev[stat] + 1; // Increment attempts for misses
+            } else if (stat === 'oreb' || stat === 'dreb') {
+                updates[stat] = prev[stat] + 1;
+                updates.rebounds = prev.rebounds + 1; // Also increment total rebounds
+            } else {
+                // For other stats like assists, steals, blocks, turnovers, fouls
+                updates[stat] = prev[stat] + 1;
+            }
+
+            // Record shot if applicable
+            if (location && (shotValue === 2 || shotValue === 3 || shotValue === 1)) {
+                const newShots = [...(prev.shots || [])];
                 newShots.push({
                     x: location.x,
                     y: location.y,
-                    value: points,
+                    value: shotValue,
                     isMake,
-                    type,
+                    type: `${shotValue}pt`,
                     period: prev.currentPeriod,
                     time: getTimestamp()
                 });
+                updates.shots = newShots;
             }
 
-            const updates = {
-                points: newScore,
-                periodScores: { ...prev.periodScores, [prev.currentPeriod]: currentPeriodScore },
-                shots: newShots
-            };
-
-            if (type === '2pt' || type === '3pt') {
-                updates.fga = prev.fga + 1;
-                if (isMake) updates.fgm = prev.fgm + 1;
-                if (type === '3pt') {
-                    updates.fg3a = prev.fg3a + 1;
-                    if (isMake) updates.fg3m = prev.fg3m + 1;
-                }
-            } else if (type === 'ft' || type === 'tech_ft') {
-                updates.fta = prev.fta + 1;
-                if (isMake) updates.ftm = prev.ftm + 1;
-            }
-            // Log action with timestamp
-            const actionLog = {
-                type: 'score',
-                points,
-                isMake,
-                shotType: type,
-                period: prev.currentPeriod,
-                timestamp: getTimestamp(),
-                createdAt: new Date().toISOString()
-            };
-            // Note: In a real app we'd probably save this log to a separate collection or array
-
-            return { ...prev, ...updates };
+            return updates;
         });
 
         // Close modal if open
         setShowCourtModal(false);
         setPendingShot(null);
-    };
-
-    const incrementStat = (stat) => {
-        saveStateToHistory();
-        setGameState(prev => ({ ...prev, [stat]: prev[stat] + 1 }));
     };
 
     const resetGame = () => {
@@ -621,6 +631,8 @@ export default function App() {
                     outcome: gameData.outcome,
                     score: gameData.finalScore,
                     pts: gameState.points,
+                    oreb: gameState.oreb,
+                    dreb: gameState.dreb,
                     reb: gameState.rebounds,
                     ast: gameState.assists,
                     stl: gameState.steals,
@@ -828,7 +840,7 @@ export default function App() {
             return;
         }
 
-        const headers = ["Date", "Player", "My Team", "Opponent", "Result", "Score", "Points", "Rebounds", "Assists", "Steals", "Blocks", "Turnovers", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA", "Fouls"];
+        const headers = ["Date", "Player", "My Team", "Opponent", "Result", "Score", "Points", "Off. Reb", "Def. Reb", "Total Reb", "Assists", "Steals", "Blocks", "Turnovers", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA", "Fouls"];
         const rows = games.map(g => [
             new Date(g.date).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }).replace(/\//g, '-'),
             playerName, // Current player name setting at export time, or saved player name if we saved it (we didn't save it in old games, so this is a safe fallback)
@@ -837,6 +849,8 @@ export default function App() {
             g.outcome,
             g.finalScore,
             g.stats?.points ?? 0,
+            g.stats?.oreb ?? 0,
+            g.stats?.dreb ?? 0,
             g.stats?.rebounds ?? 0,
             g.stats?.assists ?? 0,
             g.stats?.steals ?? 0,
@@ -1035,31 +1049,19 @@ export default function App() {
                                 <span className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: theme.accent }}></span>
                                 Scoring
                             </h3>
-                            <div className="grid grid-cols-3 gap-3 md:gap-4">
-                                {/* 2PT */}
-                                <div className="space-y-1">
-                                    <div className="text-center text-xs font-medium mb-1 opacity-70">2 Points</div>
-                                    <div className="grid grid-cols-2 gap-1">
-                                        <StatButton label="Make" onClick={() => handleScore(2, true, '2pt')} theme={theme} type="positive" />
-                                        <MissButton onClick={() => handleScore(0, false, '2pt')} />
-                                    </div>
-                                </div>
-                                {/* 3PT */}
-                                <div className="space-y-1">
-                                    <div className="text-center text-xs font-medium mb-1 opacity-70">3 Points</div>
-                                    <div className="grid grid-cols-2 gap-1">
-                                        <StatButton label="Make" onClick={() => handleScore(3, true, '3pt')} theme={theme} type="positive" />
-                                        <MissButton onClick={() => handleScore(0, false, '3pt')} />
-                                    </div>
-                                </div>
-                                {/* FT */}
-                                <div className="space-y-1">
-                                    <div className="text-center text-xs font-medium mb-1 opacity-70">Free Throw</div>
-                                    <div className="grid grid-cols-2 gap-1">
-                                        <StatButton label="Make" onClick={() => handleScore(1, true, 'ft')} theme={theme} type="positive" />
-                                        <MissButton onClick={() => handleScore(0, false, 'ft')} />
-                                    </div>
-                                </div>
+                            {/* Stat Controls - Grid Layout */}
+                            <div className="grid grid-cols-2 gap-3 mb-6">
+                                {/* Row 1: 2PT */}
+                                <ScoreButton label="+2" subLabel="" onClick={() => handleStatClick('fgm', 2, true, 2)} theme={theme} type="positive" />
+                                <MissButton text="-2" onClick={() => handleStatClick('fga', 0, false, 2)} />
+
+                                {/* Row 2: 3PT */}
+                                <ScoreButton label="+3" subLabel="" onClick={() => handleStatClick('fg3m', 3, true, 3)} theme={theme} type="positive" />
+                                <MissButton text="-3" onClick={() => handleStatClick('fg3a', 0, false, 3)} />
+
+                                {/* Row 3: FT */}
+                                <ScoreButton label="+1" subLabel="" onClick={() => handleStatClick('ftm', 1, true, 1)} theme={theme} type="positive" />
+                                <MissButton text="-1" onClick={() => handleStatClick('fta', 0, false, 1)} />
                             </div>
                         </div>
 
@@ -1069,62 +1071,54 @@ export default function App() {
                                 <span className="w-2 h-2 rounded-full bg-blue-400 mr-2"></span>
                                 Stats
                             </h3>
-                            <div className="flex flex-col gap-2">
-                                {/* Row 1: REB, AST, STL, BLK */}
-                                <div className="grid grid-cols-4 gap-2">
-                                    <ActionButton label="Rebounds" onClick={() => incrementStat('rebounds')} theme={theme} type="positive" />
-                                    <ActionButton label="Assists" onClick={() => incrementStat('assists')} theme={theme} type="positive" />
-                                    <ActionButton label="Steals" onClick={() => incrementStat('steals')} theme={theme} type="positive" />
-                                    <ActionButton label="Blocks" onClick={() => incrementStat('blocks')} theme={theme} type="positive" />
-                                </div>
-                                {/* Row 2: TO, FOULS, TECH */}
-                                <div className="grid grid-cols-3 gap-2">
-                                    <ActionButton label="Turnovers" onClick={() => incrementStat('turnovers')} theme={theme} type="negative" />
-                                    <ActionButton label="Fouls" onClick={() => incrementStat('fouls')} theme={theme} type="negative" />
-                                    <button
-                                        onClick={() => setShowTechModal(true)}
-                                        style={{ borderColor: theme.border, backgroundColor: `${theme.bg}80` }}
-                                        className="border text-white text-xs md:text-sm font-semibold py-3 px-1 rounded-lg shadow-sm transition-all duration-75 uppercase hover:brightness-125 transform active:scale-95 active:!bg-red-600 active:!border-red-500 flex items-center justify-center space-x-1"
-                                    >
-                                        <AlertTriangle className="w-3 h-3" />
-                                        <span>Tech Foul</span>
-                                    </button>
-                                </div>
+                            {/* Other Stats - Grid */}
+                            <div className="grid grid-cols-4 gap-2">
+                                <ActionButton label="OR" onClick={() => handleStatClick('oreb')} theme={theme} />
+                                <ActionButton label="DR" onClick={() => handleStatClick('dreb')} theme={theme} />
+                                <ActionButton label="ASST" onClick={() => handleStatClick('assists')} theme={theme} type="positive" />
+                                <ActionButton label="STL" onClick={() => handleStatClick('steals')} theme={theme} type="positive" />
+
+                                <ActionButton label="BLK" onClick={() => handleStatClick('blocks')} theme={theme} type="positive" />
+                                <ActionButton label="TO" onClick={() => handleStatClick('turnovers')} theme={theme} type="negative" />
+                                <ActionButton label="Foul" onClick={() => handleStatClick('fouls')} theme={theme} type="negative" />
+                                <ActionButton label="Tech" onClick={() => setShowTechModal(true)} theme={theme} type="negative" />
                             </div>
                         </div>
-
-                        {/* Stats Summary */}
-                        <div className="rounded-xl p-4 border" style={{ backgroundColor: 'rgba(0,0,0,0.3)', borderColor: theme.border }}>
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="font-bold text-sm uppercase tracking-wide">Current Stats</h3>
-                                <div className="text-xs opacity-70"></div>
-                            </div>
-                            <div className="grid grid-cols-5 gap-2">
-                                <StatCard label="PTS" value={gameState.points} subtext={`${gameState.fgm}/${gameState.fga} FG`} theme={theme} />
-                                <StatCard label="REB" value={gameState.rebounds} theme={theme} />
-                                <StatCard label="AST" value={gameState.assists} theme={theme} />
-                                <StatCard label="STL" value={gameState.steals} theme={theme} />
-                                <StatCard label="BLK" value={gameState.blocks} theme={theme} />
-                            </div>
-                            <div className="grid grid-cols-3 gap-2 mt-2">
-                                {[{ l: 'FG%', v: fgPct }, { l: '3PT%', v: fg3Pct }, { l: 'FT%', v: ftPct }].map((s, i) => (
-                                    <div key={i} className="text-center rounded p-1 bg-white/5">
-                                        <div className="text-[10px] opacity-60 uppercase">{s.l}</div>
-                                        <div className="font-bold" style={{ color: theme.accent }}>{s.v}%</div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        <button
-                            onClick={initSubmitProcess}
-                            style={{ backgroundColor: theme.accent, color: '#1a0b2e' }}
-                            className="w-full font-bold py-3 px-6 rounded-lg shadow-lg flex items-center justify-center space-x-2 transition-transform transform active:scale-95 hover:brightness-110"
-                        >
-                            <Save className="w-5 h-5" />
-                            <span>Submit Game Stats</span>
-                        </button>
                     </div>
+
+                    {/* Stats Summary */}
+                    <div className="rounded-xl p-4 border" style={{ backgroundColor: 'rgba(0,0,0,0.3)', borderColor: theme.border }}>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-bold text-sm uppercase tracking-wide">Current Stats</h3>
+                            <div className="text-xs opacity-70"></div>
+                        </div>
+                        <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                            <StatCard label="PTS" value={gameState.points} subtext={`${gameState.fgm}/${gameState.fga} FG`} theme={theme} />
+                            <StatCard label="OR" value={gameState.oreb} theme={theme} />
+                            <StatCard label="DR" value={gameState.dreb} theme={theme} />
+                            <StatCard label="AST" value={gameState.assists} theme={theme} />
+                            <StatCard label="STL" value={gameState.steals} theme={theme} />
+                            <StatCard label="BLK" value={gameState.blocks} theme={theme} />
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 mt-2">
+                            {[{ l: 'FG%', v: fgPct }, { l: '3PT%', v: fg3Pct }, { l: 'FT%', v: ftPct }].map((s, i) => (
+                                <div key={i} className="text-center rounded p-1 bg-white/5">
+                                    <div className="text-[10px] opacity-60 uppercase">{s.l}</div>
+                                    <div className="font-bold" style={{ color: theme.accent }}>{s.v}%</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={initSubmitProcess}
+                        style={{ backgroundColor: theme.accent, color: '#1a0b2e' }}
+                        className="w-full font-bold py-3 px-6 rounded-lg shadow-lg flex items-center justify-center space-x-2 transition-transform transform active:scale-95 hover:brightness-110"
+                    >
+                        <Save className="w-5 h-5" />
+                        <span>Submit Game Stats</span>
+                    </button>
+
                 </section >
             </main >
 
