@@ -22,7 +22,7 @@ import {
     Activity, History, Clipboard, Trash2, Settings, X, Save, RotateCcw,
     Trophy, Calendar, ChevronRight, ChevronLeft, CheckCircle2,
     Clock, PlayCircle, PauseCircle, StopCircle, Undo2,
-    Upload, AlertTriangle, Layout, Palette, Share2, Download, User, Eye
+    Upload, AlertTriangle, Layout, Palette, Share2, Download, User, Eye, Sparkles, Copy, FileText
 } from 'lucide-react';
 
 import html2canvas from 'html2canvas';
@@ -344,6 +344,149 @@ const GameDetailsModal = ({ game, onClose, theme }) => {
     );
 };
 
+const AIRecapModal = ({ game, onClose, theme, openAIKey, playerName }) => {
+    if (!game) return null;
+
+    const [recap, setRecap] = useState(null);
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [error, setError] = useState('');
+
+    // Helper for safe stat access
+    const getStat = (key) => game.stats?.[key] ?? 0;
+    const calcPct = (m, a) => a > 0 ? Math.round((m / a) * 100) : 0;
+    const fgPct = calcPct(getStat('fgm'), getStat('fga'));
+
+    const handleGenerateRecap = async () => {
+        if (!openAIKey) {
+            setError("Missing OpenAI API Key. Please add it in Settings.");
+            return;
+        }
+        setIsGenerating(true);
+        setError('');
+
+        try {
+            const prompt = `
+            You are a professional sports journalist. Write a thrilling short game recap article for a basketball game based on the following stats.
+            
+            Context:
+            - Player Name: ${playerName || 'The Player'}
+            - Player Team: ${game.homeTeam}
+            - Opponent: ${game.awayTeam}
+            - Date: ${game.date}
+            - Final Score: ${game.finalScore}
+            - Outcome: ${game.outcome}
+            
+            Player Stats (${playerName || 'Hero'}):
+            - Points: ${getStat('points')}
+            - Rebounds: ${getStat('rebounds')}
+            - Assists: ${getStat('assists')}
+            - Steals: ${getStat('steals')}
+            - 3-Pointers: ${getStat('fg3m')}/${getStat('fg3a')}
+            - Shooting: ${fgPct}% FG
+
+            Instructions:
+            - Headline: Catchy and professional.
+            - Focus: Highlight ${playerName}'s performance.
+            - Tone: Exciting, journalistic style.
+            - Length: Approx 150 words.
+            `;
+
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${openAIKey}`
+                },
+                body: JSON.stringify({
+                    model: "gpt-4o-mini",
+                    messages: [{ role: "user", content: prompt }],
+                    temperature: 0.7
+                })
+            });
+
+            const data = await response.json();
+            if (data.error) throw new Error(data.error.message);
+
+            setRecap(data.choices[0].message.content);
+        } catch (err) {
+            setError(err.message || "Failed to generate recap");
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]" style={{ backgroundColor: theme.bg, border: `1px solid ${theme.border}` }}>
+                {/* Header */}
+                <div className="p-4 border-b flex justify-between items-center bg-black/20" style={{ borderColor: theme.border }}>
+                    <div className="flex items-center gap-2">
+                        <Sparkles className="w-5 h-5 text-purple-400" />
+                        <h2 className="font-bold text-lg uppercase">AI Game Recap</h2>
+                    </div>
+                    <button onClick={onClose}><X className="w-5 h-5 opacity-70 hover:opacity-100" /></button>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto p-6 flex flex-col">
+                    {!recap ? (
+                        <div className="flex-1 flex flex-col items-center justify-center text-center p-4 opacity-80">
+                            <FileText className="w-12 h-12 mb-4 opacity-50" />
+                            <h3 className="font-bold text-lg mb-2">Generate Match Report</h3>
+                            <p className="text-sm opacity-60 mb-6 max-w-xs mx-auto">
+                                Turn this game's stats into a professional news article using AI.
+                            </p>
+
+                            {error && (
+                                <div className="mb-4 p-3 bg-red-500/20 text-red-300 text-xs rounded-lg border border-red-500/30">
+                                    {error}
+                                </div>
+                            )}
+
+                            <button
+                                onClick={handleGenerateRecap}
+                                disabled={isGenerating}
+                                className="py-3 px-8 rounded-full font-bold shadow-lg flex items-center gap-2 hover:brightness-110 disabled:opacity-50 transition-all"
+                                style={{ backgroundColor: theme.accent, color: '#1a0b2e' }}
+                            >
+                                {isGenerating ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                                        Writing...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Sparkles className="w-4 h-4" />
+                                        Generate Story
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <div className="bg-white text-black p-6 rounded-lg font-serif shadow-lg">
+                                <div className="whitespace-pre-line leading-relaxed text-sm md:text-base">
+                                    {recap}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    navigator.clipboard.writeText(recap);
+                                    alert("Copied!");
+                                }}
+                                className="w-full py-3 rounded-lg font-bold border flex items-center justify-center gap-2 hover:bg-white/5 transition-colors"
+                                style={{ borderColor: theme.border, color: theme.text }}
+                            >
+                                <Copy className="w-4 h-4" /> Copy Text
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export default function App() {
     const [user, setUser] = useState(null);
     const [games, setGames] = useState([]);
@@ -389,16 +532,20 @@ export default function App() {
     const [gameState, setGameState] = useState(INITIAL_GAME_STATE);
     const [historyStack, setHistoryStack] = useState([]);
     const [selectedGame, setSelectedGame] = useState(null); // For Details Modal
+    const [selectedRecapGame, setSelectedRecapGame] = useState(null); // For AI Recap Modal
 
     // Timer State
     const [gameTime, setGameTime] = useState(720); // 12 minutes in seconds
     const [isTimerRunning, setIsTimerRunning] = useState(false);
-    const [timerSettings, setTimerSettings] = useState({ enabled: false, periodLength: 12 });
+    const [timerSettings, setTimerSettings] = useState({ enabled: false, periodLength: 8 }); // Default enabled: false
 
     // Shot Chart State
     const [shotChartingEnabled, setShotChartingEnabled] = useState(false);
     const [showCourtModal, setShowCourtModal] = useState(false);
     const [pendingShot, setPendingShot] = useState(null);
+
+    // AI Settings
+    const [openAIKey, setOpenAIKey] = useState(localStorage.getItem('stat-tracker-openai-key') || '');
 
     // Form State
     const [gameDetails, setGameDetails] = useState({
@@ -498,9 +645,9 @@ export default function App() {
 
             // Sort and Filter
             combined.sort((a, b) => {
-                const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
-                const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
-                return dateB - dateA;
+                const dateA = new Date(a.createdAt || 0).getTime();
+                const dateB = new Date(b.createdAt || 0).getTime();
+                return dateB - dateA; // Newest first
             });
 
             // Remove nulls/invalid
@@ -737,7 +884,6 @@ export default function App() {
             }
 
             // 3. Trigger Post-Save UI immediately
-            // alert("✅ Game Saved!");
             handlePostSave(gameData, finalScoreString); // Pass gameData and finalScoreString
 
             // 4. Google Sheets Export (Fire & Forget)
@@ -795,64 +941,84 @@ export default function App() {
         }
     };
 
+    const rainEmojis = (emoji) => {
+        const duration = 3000;
+        const animationEnd = Date.now() + duration;
+        const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
+
+        const interval = setInterval(function () {
+            const timeLeft = animationEnd - Date.now();
+
+            if (timeLeft <= 0) {
+                return clearInterval(interval);
+            }
+
+            const particleCount = 50 * (timeLeft / duration);
+
+            // Fallback for "emoji" if library doesn't support it: use a DOM approach or scalar
+            // Since standard canvas-confetti doesn't support emojis easily without custom shapes,
+            // We will use a simple DOM overlay for emojis or just colored confetti if that fails.
+            // BUT, a better way for "Crying Emojis" without complex canvas logic is to just append elements.
+
+            // Let's implement a quick DOM falling effect here instead of using canvas-confetti for emojis
+        }, 250);
+
+        // Simple DOM Emoji Rain
+        const container = document.createElement('div');
+        container.style.position = 'fixed';
+        container.style.top = '0';
+        container.style.left = '0';
+        container.style.width = '100%';
+        container.style.height = '100%';
+        container.style.pointerEvents = 'none';
+        container.style.zIndex = '9999';
+        container.id = 'emoji-rain-container';
+        document.body.appendChild(container);
+
+        const createEmoji = () => {
+            const e = document.createElement('div');
+            e.innerText = emoji;
+            e.style.position = 'absolute';
+            e.style.left = Math.random() * 100 + 'vw';
+            e.style.top = '-50px';
+            e.style.fontSize = Math.random() * 20 + 20 + 'px';
+            e.style.opacity = Math.random();
+            e.style.transform = `rotate(${Math.random() * 360}deg)`;
+            e.style.transition = `top ${Math.random() * 2 + 3}s linear, opacity 3s ease-out`; // 3-5s fall
+            container.appendChild(e);
+
+            // Animate
+            requestAnimationFrame(() => {
+                e.style.top = '110vh';
+                e.style.opacity = '0';
+            });
+
+            // Cleanup
+            setTimeout(() => {
+                e.remove();
+            }, 5000);
+        };
+
+        const rainInterval = setInterval(createEmoji, 100);
+        setTimeout(() => {
+            clearInterval(rainInterval);
+            setTimeout(() => container.remove(), 6000);
+        }, 3000); // Stop creating after 3s
+    };
+
     const triggerLossEffect = () => {
-        const colors = ['#6b7280', '#374151', '#1f2937'];
-        confetti({
-            particleCount: 100,
-            angle: 270,
-            spread: 120,
-            origin: { y: -0.1 },
-            colors: colors,
-            gravity: 1.5,
-            ticks: 400,
-            startVelocity: 30,
-        });
+        rainEmojis('😭');
     };
 
 
 
-    const handlePostSave = (gameData, finalScoreString) => { // Accept gameData and finalScoreString
+    const handlePostSave = (gameData, finalScoreString) => {
         setShowSubmitModal(false);
         if (finalResult.outcome === 'Win') {
             confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 }, colors: [theme.accent, theme.bg, '#ffffff'] });
         } else if (finalResult.outcome === 'Loss') {
             triggerLossEffect();
         }
-
-        // Trigger Notifications (Native Share)
-        setTimeout(async () => {
-            try {
-                const recapText = generateRecap({
-                    ...gameData,
-                    stats: gameState,
-                    finalScore: finalScoreString,
-                    outcome: gameData.outcome
-                }, playerName);
-
-                console.log("📝 Generated Recap:\n", recapText);
-
-                if (navigator.share) {
-                    try {
-                        await navigator.share({
-                            title: `Game Recap: ${myTeamName} vs ${gameDetails.awayTeam}`,
-                            text: recapText,
-                        });
-                        console.log("✅ Native Share opened successfully");
-                    } catch (shareError) {
-                        console.log("⚠️ Share dismissed or failed", shareError);
-                    }
-                } else {
-                    // Fallback for desktops/browsers without share
-                    console.log("⚠️ Native Share not supported, copying to clipboard");
-                    navigator.clipboard.writeText(recapText);
-                    alert("Stats copied to clipboard! (Mobile will open Share menu)");
-                }
-
-            } catch (err) {
-                console.error("Notification Error:", err);
-            }
-        }, 500);
-
 
         setGameState(INITIAL_GAME_STATE);
         setHistoryStack([]);
@@ -898,7 +1064,82 @@ export default function App() {
         fetchGames(); // Re-sync to be sure
     };
 
-    const handleShare = async (game) => {
+    const generateRecap = (game, playerName) => {
+        const safeScore = game.finalScore || "0-0";
+        const s = game.stats || {};
+
+        // Calcs
+        const calcPct = (m, a) => a > 0 ? Math.round((m / a) * 100) : 0;
+
+        // Shooting
+        const fgM = s.fgm || 0; const fgA = s.fga || 0;
+        const fg3M = s.fg3m || 0; const fg3A = s.fg3a || 0;
+        const ftM = s.ftm || 0; const ftA = s.fta || 0;
+
+        // 2PT makes/attempts (Derived)
+        const fg2M = fgM - fg3M;
+        const fg2A = fgA - fg3A;
+
+        const fgPct = calcPct(fgM, fgA);
+        const fg2Pct = calcPct(fg2M, fg2A);
+        const fg3Pct = calcPct(fg3M, fg3A);
+        const ftPct = calcPct(ftM, ftA);
+
+        const periodBreakdown = Object.entries(s.periodScores || {}).map(([p, score]) => {
+            return `Q${p}: ${score} PTS`;
+            // Note: In current data model, we only track total points per period for the TEAM/PLAYER?
+            // The current state tracks 'periodScores' which are total points accumulated in that period.
+            // However, 'periodScores' in state is cumulative or per period?
+            // Checking Update Logic: Line 755: currentPeriodScore += points. 
+            // So s.periodScores[p] IS the points for that period.
+            // But we don't track detailed stats (REB, AST) per period in the current simple state, only Points.
+            // So I will only show Points for the breakdown as requested, but list 0 for others to match format if strictly needed,
+            // or just show "PTS" if I can't derive others. 
+            // User request: "Q1: 10 PTS, 0 REB, 0 AST". Since we don't track REB/AST per period, I'll default to 0.
+            return `Q${p}: ${score} PTS, 0 REB, 0 AST`;
+        }).join('\n');
+
+        // Text Generation
+        // Note: The prompt example had "MVA - Varsity Purple vs TNT" twice.
+        // And a customized bio paragraph. "Enzo contributed...".
+        // Since this is a static share string, I can't generate the dynamic bio text without AI.
+        // But the user said "share stats info... here is what it should look like".
+        // The requested block has "ENZO PERFORMANCE BREAKDOWN" and "Enzo contributed...".
+        // I can generate the "PERFORMANCE BREAKDOWN" and "STATISTICAL SUMMARY" sections dynamically.
+        // For the "Enzo contributed..." paragraph, I will template a simple one:
+        // "[Player] contributed [Points] points in a [Outcome] vs [Opponent]."
+
+        const pName = (playerName || 'Player').toUpperCase();
+
+        return `🏀 Game Recap: ${game.homeTeam} vs ${game.awayTeam}\n` +
+            `📅 ${new Date(game.date).toLocaleDateString()}\n` +
+            `🏆 Result: ${game.outcome} (${safeScore})\n\n` +
+            // `${game.homeTeam} vs ${game.awayTeam}\n` + // Redundant based on user example, but included if they want exact look
+            `Final Score: ${safeScore}\n\n` +
+            `📊 ${pName} PERFORMANCE BREAKDOWN\n\n` +
+            `${playerName || 'The Player'} contributed ${s.points} points in the ${game.outcome === 'Win' ? 'win' : 'loss'} against ${game.awayTeam}.\n\n` +
+            `STATISTICAL SUMMARY:\n` +
+            `• Points: ${s.points}\n` +
+            `• Field Goals: ${fgM}/${fgA} (${fgPct}%)\n` +
+            `• 3-Pointers: ${fg3M}/${fg3A}\n` +
+            `• Free Throws: ${ftM}/${ftA}\n` +
+            `• Rebounds: ${s.rebounds}\n` +
+            `• Assists: ${s.assists}\n` +
+            `• Steals: ${s.steals}\n` +
+            `• Blocks: ${s.blocks}\n` +
+            `• Turnovers: ${s.turnovers}\n` +
+            `• Fouls: ${s.fouls}\n` +
+            `• Minutes: ${parseInt(gameTime / 60) || 32}\n\n` + // We don't track minutes played perfectly, defaulting or using timer
+            `SHOOTING BREAKDOWN:\n` +
+            `• Overall FG%: ${fgPct}%\n` +
+            `• 2-Point FG%: ${fg2Pct}%\n` +
+            `• 3-Point FG%: ${fg3Pct}%\n` +
+            `• Free Throw%: ${ftPct}%\n\n` +
+            `PERIOD-BY-PERIOD BREAKDOWN:\n` +
+            `${periodBreakdown}`;
+    };
+
+    const handleInfoShare = async (game) => {
         const text = generateRecap(game, playerName);
         console.log("📤 Sharing Recap from History");
 
@@ -1248,6 +1489,15 @@ export default function App() {
                 theme={theme}
             />
 
+            {/* --- AI RECAP MODAL --- */}
+            <AIRecapModal
+                game={selectedRecapGame}
+                onClose={() => setSelectedRecapGame(null)}
+                theme={theme}
+                openAIKey={openAIKey}
+                playerName={playerName}
+            />
+
             {/* --- SETTINGS MODAL --- */}
             {
                 showSettings && (
@@ -1265,7 +1515,7 @@ export default function App() {
                                 <div className="space-y-4">
                                     {/* Tabs Header */}
                                     <div className="flex border-b mb-4 overflow-x-auto" style={{ borderColor: theme.border }}>
-                                        {['player', 'team', 'tracker', 'opponents'].map(tab => (
+                                        {['player', 'team', 'tracker', 'ai', 'opponents'].map(tab => (
                                             <button
                                                 key={tab}
                                                 onClick={() => setActiveSettingsTab(tab)}
@@ -1278,6 +1528,7 @@ export default function App() {
                                                 {tab === 'player' && 'Player'}
                                                 {tab === 'team' && 'Team'}
                                                 {tab === 'tracker' && 'Tracker'}
+                                                {tab === 'ai' && 'AI'}
                                                 {tab === 'opponents' && 'Opponents'}
                                             </button>
                                         ))}
@@ -1318,7 +1569,6 @@ export default function App() {
                                                 </div>
                                             </div>
                                         )}
-
                                         {/* --- TEAM INFO TAB --- */}
                                         {activeSettingsTab === 'team' && (
                                             <div className="space-y-6 animate-in fade-in duration-200">
@@ -1478,6 +1728,39 @@ export default function App() {
                                                             style={{ borderColor: theme.border }}
                                                         />
                                                         <p className="text-[10px] opacity-40 mt-1">Paste your Web App URL here to auto-export on save.</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                        {/* --- AI SETUP TAB --- */}
+                                        {activeSettingsTab === 'ai' && (
+                                            <div className="space-y-4 animate-in fade-in duration-200">
+                                                <div className="bg-black/20 p-4 rounded-lg border border-dashed" style={{ borderColor: theme.border }}>
+                                                    <div className="flex items-center gap-2 mb-3">
+                                                        <Sparkles className="w-5 h-5 text-purple-400" />
+                                                        <label className="text-xs font-bold uppercase opacity-70">OpenAI API Key</label>
+                                                    </div>
+
+                                                    <p className="text-[10px] opacity-60 mb-2 leading-relaxed">
+                                                        Enter your OpenAI API Key to enable AI-powered game recaps.
+                                                        Your key is stored locally on this device and sent directly to OpenAI.
+                                                    </p>
+
+                                                    <div className="relative">
+                                                        <input
+                                                            type="password"
+                                                            value={openAIKey}
+                                                            onChange={(e) => {
+                                                                setOpenAIKey(e.target.value);
+                                                                localStorage.setItem('stat-tracker-openai-key', e.target.value);
+                                                            }}
+                                                            placeholder="sk-..."
+                                                            className="w-full bg-black/40 border rounded-lg p-3 text-sm font-mono focus:outline-none focus:border-purple-400 transtion-colors"
+                                                            style={{ borderColor: theme.border }}
+                                                        />
+                                                    </div>
+                                                    <div className="mt-2 text-[10px] opacity-40 italic">
+                                                        Note: Usage costs a fraction of a cent per recap.
                                                     </div>
                                                 </div>
                                             </div>
@@ -1728,19 +2011,36 @@ export default function App() {
                                                             <div className="text-sm opacity-80 mt-1 font-mono">Final Score: {safeScore}</div>
                                                         </div>
                                                         <div className="flex space-x-2">
-                                                            <button
-                                                                onClick={() => setSelectedGame(game)}
-                                                                className="p-2 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors"
-                                                                title="View Details"
-                                                            >
-                                                                <Eye className="w-4 h-4" />
-                                                            </button>
-                                                            <button onClick={() => handleShare(game)} className="flex items-center space-x-1 px-3 py-1.5 rounded text-xs font-bold bg-white/5 hover:bg-white/10 border transition-colors" style={{ borderColor: theme.border }}>
-                                                                <Share2 className="w-3 h-3" /> <span>SHARE</span>
-                                                            </button>
-                                                            <button onClick={() => deleteGame(game.id)} className="flex items-center space-x-1 px-3 py-1.5 rounded text-xs font-bold bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition-colors">
-                                                                <Trash2 className="w-3 h-3" /> <span>DELETE</span>
-                                                            </button>
+                                                            <div className="flex items-center space-x-1">
+                                                                <button
+                                                                    onClick={() => setSelectedGame(game)}
+                                                                    className="p-2 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors"
+                                                                    title="View Details"
+                                                                >
+                                                                    <Eye className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleInfoShare(game)}
+                                                                    className="p-2 rounded-lg bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20 transition-colors"
+                                                                    title="Share Stats"
+                                                                >
+                                                                    <Share2 className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setSelectedRecapGame(game)}
+                                                                    className="p-2 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 transition-colors"
+                                                                    title="AI Recap"
+                                                                >
+                                                                    <FileText className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => deleteGame(game.id)}
+                                                                    className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
+                                                                    title="Delete Game"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                     </div>
 
