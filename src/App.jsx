@@ -22,7 +22,7 @@ import {
     Activity, History, Clipboard, Trash2, Settings, X, Save, RotateCcw,
     Trophy, Calendar, ChevronRight, ChevronLeft, CheckCircle2,
     Clock, PlayCircle, PauseCircle, StopCircle, Undo2,
-    Upload, AlertTriangle, Layout, Palette, Share2, Download, User, Eye, Sparkles, Copy, FileText, HelpCircle
+    Upload, AlertTriangle, Layout, Palette, Share2, Download, User, Eye, Sparkles, Copy, FileText, HelpCircle, FileQuestion
 } from 'lucide-react';
 
 import html2canvas from 'html2canvas';
@@ -1116,7 +1116,7 @@ export default function App() {
         fetchGames(); // Re-sync to be sure
     };
 
-    const generateRecap = (game, playerName) => {
+    const generateRecap = (game, playerName, allGames = []) => {
         const safeScore = game.finalScore || "0-0";
         const s = game.stats || {};
 
@@ -1138,18 +1138,29 @@ export default function App() {
         const ftPct = calcPct(ftM, ftA);
 
         const periodBreakdown = Object.entries(s.periodScores || {}).map(([p, score]) => {
-            return `Q${p}: ${score} PTS`;
-            // Note: In current data model, we only track total points per period for the TEAM/PLAYER?
-            // The current state tracks 'periodScores' which are total points accumulated in that period.
-            // However, 'periodScores' in state is cumulative or per period?
-            // Checking Update Logic: Line 755: currentPeriodScore += points. 
-            // So s.periodScores[p] IS the points for that period.
-            // But we don't track detailed stats (REB, AST) per period in the current simple state, only Points.
-            // So I will only show Points for the breakdown as requested, but list 0 for others to match format if strictly needed,
-            // or just show "PTS" if I can't derive others. 
-            // User request: "Q1: 10 PTS, 0 REB, 0 AST". Since we don't track REB/AST per period, I'll default to 0.
             return `Q${p}: ${score} PTS, 0 REB, 0 AST`;
         }).join('\n');
+
+        // SEASON AGGREGATE CALCULATION
+        let seasonSection = "";
+        if (allGames && allGames.length > 0) {
+            let tFGM = 0, tFGA = 0;
+            let t3PM = 0, t3PA = 0;
+            let tFTM = 0, tFTA = 0;
+
+            allGames.forEach(g => {
+                const gs = g.stats || {};
+                tFGM += (gs.fgm || 0); tFGA += (gs.fga || 0);
+                t3PM += (gs.fg3m || 0); t3PA += (gs.fg3a || 0);
+                tFTM += (gs.ftm || 0); tFTA += (gs.fta || 0);
+            });
+
+            seasonSection =
+                `🏆 SEASON SNAPSHOT (${allGames.length} Games):\n` +
+                `• Overall FG: ${tFGM}/${tFGA} (${calcPct(tFGM, tFGA)}%)\n` +
+                `• 3-Point FG: ${t3PM}/${t3PA} (${calcPct(t3PM, t3PA)}%)\n` +
+                `• Free Throws: ${tFTM}/${tFTA} (${calcPct(tFTM, tFTA)}%)`;
+        }
 
         // Text Generation
         // Note: The prompt example had "MVA - Varsity Purple vs TNT" twice.
@@ -1187,11 +1198,12 @@ export default function App() {
             `• 3-Point FG%: ${fg3Pct}%\n` +
             `• Free Throw%: ${ftPct}%\n\n` +
             `PERIOD-BY-PERIOD BREAKDOWN:\n` +
-            `${periodBreakdown}`;
+            `${periodBreakdown}\n\n` +
+            `${seasonSection}`;
     };
 
     const handleInfoShare = async (game) => {
-        const text = generateRecap(game, playerName);
+        const text = generateRecap(game, playerName, games);
         console.log("📤 Sharing Recap from History");
 
         const shareData = {
@@ -1285,8 +1297,120 @@ export default function App() {
         link.setAttribute("href", encodedUri);
         link.setAttribute("download", `stats_export_${new Date().toISOString().split('T')[0]}.csv`);
         document.body.appendChild(link);
+        document.body.removeChild(link);
+    };
+
+    const handleDownloadTemplate = () => {
+        const headers = ["Date", "Player", "My Team", "Opponent", "Result", "Score", "Points", "Off. Reb", "Def. Reb", "Total Reb", "Assists", "Steals", "Blocks", "Turnovers", "FGM", "FGA", "3PM", "3PA", "FTM", "FTA", "Fouls"];
+        const sampleRow = [
+            new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }).replace(/\//g, '-'),
+            "Player Name", "My Team", "Opponent Team", "Win", "21-15", "21", "2", "3", "5", "5", "2", "1", "3", "8", "15", "4", "8", "1", "2", "3"
+        ];
+
+        const csvContent = "data:text/csv;charset=utf-8,"
+            + headers.join(",") + "\n"
+            + sampleRow.join(",");
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "stat_tracker_template.csv");
+        document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+    };
+
+    const handleImport = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const text = e.target.result;
+                const lines = text.split('\n').map(line => line.trim()).filter(line => line);
+                if (lines.length < 2) {
+                    alert("Invalid CSV format: Not enough lines.");
+                    return;
+                }
+
+                // Check Headers (Loose check)
+                const headers = lines[0].split(',');
+                if (!headers[0].includes("Date") || !headers[6].includes("Points")) {
+                    alert("Invalid CSV Template. Please use the templated download.");
+                    return;
+                }
+
+                const newGames = [];
+                // Start from index 1 to skip header
+                for (let i = 1; i < lines.length; i++) {
+                    const row = lines[i].split(',');
+                    if (row.length < headers.length) continue;
+
+                    // Automatically skip the sample row if user kept it
+                    if (row[1] === "Player Name" && row[2] === "My Team") continue;
+
+                    // Index Mapping based on fixed header order:
+                    // 0: Date, 2: Home, 3: Away, 4: Outcome, 5: Score
+                    // 6: PTS, 7: OR, 8: DR, 9: TR, 10: AST, 11: STL, 12: BLK, 13: TO, 14: FGM, 15: FGA, 16: 3PM, 17: 3PA, 18: FTM, 19: FTA, 20: PF
+
+                    const dateStr = row[0];
+                    const pts = parseInt(row[6]) || 0;
+                    const oreb = parseInt(row[7]) || 0;
+                    const dreb = parseInt(row[8]) || 0;
+
+                    const gameObj = {
+                        id: 'imported_' + Date.now() + '_' + i,
+                        date: new Date(dateStr).toISOString(), // Attempt to parse standard formats
+                        homeTeam: row[2],
+                        awayTeam: row[3],
+                        outcome: row[4],
+                        finalScore: row[5],
+                        createdAt: new Date(dateStr).getTime(), // For sorting
+                        stats: {
+                            points: pts,
+                            oreb: oreb,
+                            dreb: dreb,
+                            rebounds: parseInt(row[9]) || (oreb + dreb),
+                            assists: parseInt(row[10]) || 0,
+                            steals: parseInt(row[11]) || 0,
+                            blocks: parseInt(row[12]) || 0,
+                            turnovers: parseInt(row[13]) || 0,
+                            fgm: parseInt(row[14]) || 0,
+                            fga: parseInt(row[15]) || 0,
+                            fg3m: parseInt(row[16]) || 0,
+                            fg3a: parseInt(row[17]) || 0,
+                            ftm: parseInt(row[18]) || 0,
+                            fta: parseInt(row[19]) || 0,
+                            fouls: parseInt(row[20]) || 0,
+                            periodScores: { 1: pts } // Default all points to Q1 since we don't have period breakdown in CSV
+                        }
+                    };
+                    newGames.push(gameObj);
+                }
+
+                if (newGames.length > 0) {
+                    const updatedGames = [...games, ...newGames];
+                    // Sort descending by date
+                    updatedGames.sort((a, b) => {
+                        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+                    });
+
+                    setGames(updatedGames);
+                    localStorage.setItem('stat-tracker-games', JSON.stringify(updatedGames));
+                    alert(`Successfully imported ${newGames.length} games!`);
+                } else {
+                    alert("No valid games found.");
+                }
+
+            } catch (err) {
+                console.error("Import Error", err);
+                alert("Failed to import CSV.");
+            }
+        };
+        reader.readAsText(file);
+        // Reset input
+        event.target.value = '';
     };
 
     // --- Render Helpers ---
@@ -2092,9 +2216,31 @@ export default function App() {
                                     <span>Game History</span>
                                 </h2>
                                 <div className="flex items-center space-x-2">
-                                    <button onClick={handleExport} className="p-1 rounded hover:bg-white/10" title="Export CSV">
-                                        <Download className="w-5 h-5" />
+                                    <button
+                                        onClick={handleExport}
+                                        className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors"
+                                        title="Export CSV"
+                                    >
+                                        <Download className="w-5 h-5 text-green-400" />
                                     </button>
+
+                                    <div className="h-6 w-px bg-white/20 mx-1"></div>
+
+                                    <button
+                                        onClick={handleDownloadTemplate}
+                                        className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors"
+                                        title="Download Template"
+                                    >
+                                        <FileQuestion className="w-5 h-5 text-blue-400" />
+                                    </button>
+
+                                    <label className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors cursor-pointer" title="Import CSV">
+                                        <Upload className="w-5 h-5 text-yellow-400" />
+                                        <input type="file" accept=".csv" onChange={handleImport} className="hidden" />
+                                    </label>
+
+                                    <div className="h-6 w-px bg-white/20 mx-1"></div>
+
                                     <button onClick={() => setShowHistory(false)}><X className="w-5 h-5 opacity-70 hover:opacity-100" /></button>
                                 </div>
                             </div>
